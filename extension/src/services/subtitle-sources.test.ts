@@ -86,6 +86,14 @@ describe('JimakuClient', () => {
 
         await expect(client.getEntry(123)).rejects.toThrow('Jimaku request failed with status 503');
     });
+
+    it('throws when successful response does not contain valid json', async () => {
+        const fetchMock = jest.fn().mockResolvedValue(createResponse({ ok: true, status: 200, textData: '<html/>' }));
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const client = new JimakuClient({ apiKey: 'test-key', minRequestIntervalMs: 0 });
+
+        await expect(client.getEntry(123)).rejects.toThrow('Jimaku request failed: expected a JSON response body');
+    });
 });
 
 describe('AJATT subtitle source', () => {
@@ -141,10 +149,9 @@ describe('AJATT subtitle source', () => {
         const files = await listAjattDirectoryFiles('/Sousou%20no%20Frieren/');
 
         expect(fetchMock).toHaveBeenCalledWith('https://subtitles.ajatt.top/Sousou%20no%20Frieren/');
-        expect(files).toHaveLength(3);
+        expect(files).toHaveLength(2);
         expect(files[0].url).toBe('https://subtitles.ajatt.top/Sousou%20no%20Frieren/Sousou.no.Frieren.S01E01.srt');
         expect(files[1].url).toBe('https://subtitles.ajatt.top/Sousou%20no%20Frieren/Sousou.no.Frieren.S01E02.ass');
-        expect(files[2].url).toBe('https://subtitles.ajatt.top/Sousou%20no%20Frieren/Sousou.no.Frieren.Batch.zip');
     });
 
     it('throws when ajatt search request fails', async () => {

@@ -7,6 +7,7 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import Stack from '@mui/material/Stack';
@@ -400,12 +401,13 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
                                     </ListItemButton>
                                 ))}
                                 {jimakuEntries.length === 0 && (
-                                    <ListItemText
-                                        sx={{ px: 2, py: 1 }}
-                                        primary={t('extension.videoDataSync.noEntries', {
-                                            defaultValue: emptyStateText.entries,
-                                        })}
-                                    />
+                                    <ListItem>
+                                        <ListItemText
+                                            primary={t('extension.videoDataSync.noEntries', {
+                                                defaultValue: emptyStateText.entries,
+                                            })}
+                                        />
+                                    </ListItem>
                                 )}
                             </List>
                         </Stack>
@@ -430,12 +432,13 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
                                     </ListItemButton>
                                 ))}
                                 {ajattEntries.length === 0 && (
-                                    <ListItemText
-                                        sx={{ px: 2, py: 1 }}
-                                        primary={t('extension.videoDataSync.noDirectories', {
-                                            defaultValue: emptyStateText.directories,
-                                        })}
-                                    />
+                                    <ListItem>
+                                        <ListItemText
+                                            primary={t('extension.videoDataSync.noDirectories', {
+                                                defaultValue: emptyStateText.directories,
+                                            })}
+                                        />
+                                    </ListItem>
                                 )}
                             </List>
                         </Stack>
@@ -451,10 +454,11 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
                             </ListItemButton>
                         ))}
                         {selectedFiles.length === 0 && (
-                            <ListItemText
-                                sx={{ px: 2, py: 1 }}
-                                primary={t('extension.videoDataSync.noFiles', { defaultValue: emptyStateText.files })}
-                            />
+                            <ListItem>
+                                <ListItemText
+                                    primary={t('extension.videoDataSync.noFiles', { defaultValue: emptyStateText.files })}
+                                />
+                            </ListItem>
                         )}
                     </List>
                     {loading && (

@@ -193,6 +193,10 @@ export class JimakuClient {
             throw new Error(errorMessage);
         }
 
+        if (parsedBody === undefined) {
+            throw new Error('Jimaku request failed: expected a JSON response body');
+        }
+
         return {
             data: parsedBody as T,
             rateLimit,
@@ -295,7 +299,7 @@ export const searchAjatt = async (
     return matches;
 };
 
-const subtitleExtensions = ['.srt', '.ass', '.zip'];
+const subtitleExtensions = ['.srt', '.ass'];
 
 const isSubtitleLink = (href: string) => {
     const lower = href.toLowerCase();
