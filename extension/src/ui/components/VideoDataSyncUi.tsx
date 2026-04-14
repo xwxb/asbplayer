@@ -22,12 +22,27 @@ import { bufferToBase64 } from '@project/common/base64';
 import { useTranslation } from 'react-i18next';
 import type { Profile } from '@project/common/settings';
 import { StyledEngineProvider } from '@mui/material/styles';
+import OnlineSubtitleSourceDialog from './OnlineSubtitleSourceDialog';
 
 interface Props {
     bridge: Bridge;
 }
 
 const initialTrackIds = ['-', '-', '-'];
+
+const detectOnlineSubtitleTitleHint = (suggestedName: string) => {
+    const normalizedSuggestedName = suggestedName.trim();
+
+    if (normalizedSuggestedName.length > 0) {
+        return normalizedSuggestedName;
+    }
+
+    if (typeof document === 'undefined') {
+        return '';
+    }
+
+    return document.title.trim();
+};
 
 export default function VideoDataSyncUi({ bridge }: Props) {
     const { t } = useTranslation();
@@ -50,6 +65,9 @@ export default function VideoDataSyncUi({ bridge }: Props) {
     const [fileInputTrackNumber, setFileInputTrackNumber] = useState<number>();
     const [hasSeenFtue, setHasSeenFtue] = useState<boolean>();
     const [hideRememberTrackPreferenceToggle, setHideRememberTrackPreferenceToggle] = useState<boolean>();
+    const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
+    const [onlineDialogTrackNumber, setOnlineDialogTrackNumber] = useState<number>();
+    const detectedTitleHint = useMemo(() => detectOnlineSubtitleTitleHint(suggestedName), [suggestedName]);
 
     const theme = useMemo(() => createTheme((themeType || 'dark') as PaletteMode), [themeType]);
 
@@ -223,6 +241,56 @@ export default function VideoDataSyncUi({ bridge }: Props) {
         fileInputRef.current?.click();
     }, []);
 
+    const handleOpenOnline = useCallback((track?: number) => {
+        setOnlineDialogTrackNumber(track);
+        setOnlineDialogOpen(true);
+    }, []);
+
+    const handleOnlineDialogClose = useCallback(() => {
+        setOnlineDialogOpen(false);
+    }, []);
+
+    const handleImportOnlineFile = useCallback(
+        async ({ name, url }: { name: string; url: string }) => {
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Subtitle retrieval failed with status ${response.status} (${response.statusText}).`);
+            }
+
+            const blob = await response.blob();
+            const file = new File([blob], name);
+            const extension = name.includes('.') ? name.substring(name.lastIndexOf('.') + 1) : 'srt';
+            const objectUrl = URL.createObjectURL(file);
+            const track = {
+                label: name,
+                id: objectUrl,
+                url: objectUrl,
+                extension,
+                localFile: true,
+            };
+
+            setSubtitles((s) => [...s, track]);
+            setSelectedSubtitleTrackIds((s) => {
+                const next = [...s];
+
+                if (onlineDialogTrackNumber !== undefined) {
+                    next[onlineDialogTrackNumber] = track.id;
+                } else {
+                    const firstEmptyIndex = next.findIndex((id) => id === '-');
+                    if (firstEmptyIndex >= 0) {
+                        next[firstEmptyIndex] = track.id;
+                    } else {
+                        next[0] = track.id;
+                    }
+                }
+
+                return next;
+            });
+        },
+        [onlineDialogTrackNumber]
+    );
+
     const handleSetActiveProfile = useCallback(
         (profile: string | undefined) => {
             const message: ActiveProfileMessage = { command: 'activeProfile', profile: profile };
@@ -257,10 +325,17 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                     hideRememberTrackPreferenceToggle={hideRememberTrackPreferenceToggle}
                     onCancel={handleCancel}
                     onOpenFile={handleOpenFile}
+                    onOpenOnline={handleOpenOnline}
                     onOpenSettings={handleOpenSettings}
                     onConfirm={handleConfirm}
                     onSetActiveProfile={handleSetActiveProfile}
                     onDismissFtue={handleDismissFtue}
+                />
+                <OnlineSubtitleSourceDialog
+                    open={onlineDialogOpen}
+                    onClose={handleOnlineDialogClose}
+                    onImport={handleImportOnlineFile}
+                    detectedTitleHint={detectedTitleHint}
                 />
                 <input
                     ref={fileInputRef}
