@@ -31,7 +31,8 @@ export interface Token {
     states: TokenState[];
     status?: TokenStatus | null; // null means "error"
     readings: TokenReading[];
-    frequency?: number;
+    frequency?: number | null; // null means no frequency data
+    groupingKey?: string; // Stable key for equivalence aggregation
 }
 
 export interface Tokenization {
@@ -311,4 +312,8 @@ export enum ControlType {
     timeDisplay = 0,
     subtitleOffset = 1,
     playbackRate = 2,
+}
+
+export interface BrowserFeatures {
+    sidePanel: boolean;
 }

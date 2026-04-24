@@ -121,7 +121,8 @@ Thank you to all those who have contributed to asbplayer:
 [@danthemango](https://github.com/danthemango),
 [@L-M-Sherlock](https://github.com/L-M-Sherlock),
 [@Hit2Skill](https://github.com/Hit2Skill),
-[@khajiitvaper2017](https://github.com/khajiitvaper2017)
+[@khajiitvaper2017](https://github.com/khajiitvaper2017),
+[@saifkaral](https://github.com/saifkaral)
 
 Thank you to all those who have translated asbplayer:
 
@@ -129,6 +130,7 @@ Thank you to all those who have translated asbplayer:
 **Kai Böse** (German),
 **Triline**, **[@nekorushi](https://github.com/nekorushi)** (Polish),
 **NeverWinterSwor** (Simplified Chinese),
+**[@AkihaZhang](https://github.com/AkihaZhang)** (Simlified Chinese),
 **Yagxter**, **[@chatterine](https://github.com/chatterine)** (Brazilian Portuguese),
 **Leo Gonzalez** (Spanish),
 **Yuri ([@ganqqwerty](https://github.com/ganqqwerty))** (Russian),
