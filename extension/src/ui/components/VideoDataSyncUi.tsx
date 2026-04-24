@@ -12,10 +12,12 @@ import {
     VideoDataSubtitleTrack,
     VideoDataUiBridgeConfirmMessage,
     VideoDataUiBridgeOpenFileMessage,
+    VideoDataUiBridgeSetOnlineSubtitleSourceConfigMessage,
     VideoDataUiModel,
     VideoDataUiOpenReason,
     ActiveProfileMessage,
 } from '@project/common';
+import type { OnlineSubtitleSourceConfig } from '@project/common/global-state';
 import { createTheme } from '@project/common/theme';
 import { type PaletteMode } from '@mui/material/styles';
 import { bufferToBase64 } from '@project/common/base64';
@@ -107,6 +109,9 @@ export default function VideoDataSyncUi({ bridge }: Props) {
     const [fileInputTrackNumber, setFileInputTrackNumber] = useState<number>();
     const [hasSeenFtue, setHasSeenFtue] = useState<boolean>();
     const [hideRememberTrackPreferenceToggle, setHideRememberTrackPreferenceToggle] = useState<boolean>();
+    const [onlineSubtitleSourceConfig, setOnlineSubtitleSourceConfig] = useState<OnlineSubtitleSourceConfig>({
+        jimakuApiKey: '',
+    });
     const [onlineDialogOpen, setOnlineDialogOpen] = useState(false);
     const [onlineDialogTrackNumber, setOnlineDialogTrackNumber] = useState<number>();
     const detectedTitleHint = useMemo(() => detectOnlineSubtitleTitleHint(suggestedName), [suggestedName]);
@@ -219,6 +224,10 @@ export default function VideoDataSyncUi({ bridge }: Props) {
 
             if (model.hideRememberTrackPreferenceToggle !== undefined) {
                 setHideRememberTrackPreferenceToggle(model.hideRememberTrackPreferenceToggle);
+            }
+
+            if (model.onlineSubtitleSourceConfig !== undefined) {
+                setOnlineSubtitleSourceConfig(model.onlineSubtitleSourceConfig);
             }
         });
     }, [bridge, t]);
@@ -382,6 +391,17 @@ export default function VideoDataSyncUi({ bridge }: Props) {
         setHasSeenFtue(true);
         bridge.sendMessageFromServer({ command: 'dismissFtue' });
     }, [bridge]);
+    const handleOnlineSubtitleSourceConfigChanged = useCallback(
+        (state: Partial<OnlineSubtitleSourceConfig>) => {
+            setOnlineSubtitleSourceConfig((current) => ({ ...current, ...state }));
+            const message: VideoDataUiBridgeSetOnlineSubtitleSourceConfigMessage = {
+                command: 'setOnlineSubtitleSourceConfig',
+                state,
+            };
+            bridge.sendMessageFromServer(message);
+        },
+        [bridge]
+    );
 
     return (
         <StyledEngineProvider injectFirst>
@@ -415,6 +435,10 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                     onClose={handleOnlineDialogClose}
                     onImport={handleImportOnlineFile}
                     detectedTitleHint={detectedTitleHint}
+                    jimakuApiKey={onlineSubtitleSourceConfig.jimakuApiKey}
+                    onJimakuApiKeyChange={(jimakuApiKey) =>
+                        handleOnlineSubtitleSourceConfigChanged({ jimakuApiKey })
+                    }
                 />
                 <input
                     ref={fileInputRef}

@@ -15,7 +15,7 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { JimakuClient, listAjattDirectoryFiles, searchAjatt } from '@/services/subtitle-sources';
 
@@ -29,6 +29,8 @@ interface Props {
     onClose: () => void;
     onImport: (file: OnlineSubtitleImportCandidate) => Promise<void>;
     detectedTitleHint?: string;
+    jimakuApiKey: string;
+    onJimakuApiKeyChange: (jimakuApiKey: string) => void;
 }
 
 type Source = 'jimaku' | 'ajatt';
@@ -36,118 +38,6 @@ const emptyStateText = {
     entries: 'No entries',
     directories: 'No directories',
     files: 'No files',
-};
-
-const jimakuApiKeyStorageKey = 'jimakuApiKey';
-
-type ExtensionStorageAreaLike = {
-    get: (
-        keys?: string | string[] | Record<string, unknown> | null,
-        callback?: (items: Record<string, unknown>) => void
-    ) => Promise<Record<string, unknown>> | void;
-    set: (items: Record<string, unknown>, callback?: () => void) => Promise<void> | void;
-};
-
-const getExtensionStorage = () => {
-    const globalWithStorage = globalThis as typeof globalThis & {
-        browser?: { storage?: { local?: chrome.storage.StorageArea } };
-        chrome?: { storage?: { local?: chrome.storage.StorageArea } };
-    };
-
-    return (
-        (globalWithStorage.browser?.storage?.local as ExtensionStorageAreaLike | undefined) ??
-        (globalWithStorage.chrome?.storage?.local as ExtensionStorageAreaLike | undefined)
-    );
-};
-
-const getChromeRuntimeLastError = () => {
-    const globalWithChrome = globalThis as typeof globalThis & {
-        chrome?: { runtime?: { lastError?: { message?: string } } };
-    };
-
-    return globalWithChrome.chrome?.runtime?.lastError?.message;
-};
-
-const setExtensionStorageValue = async (extensionStorage: ExtensionStorageAreaLike, key: string, value: string) => {
-    if (extensionStorage.set.length >= 2) {
-        await new Promise<void>((resolve, reject) => {
-            extensionStorage.set({ [key]: value }, () => {
-                const lastErrorMessage = getChromeRuntimeLastError();
-                if (lastErrorMessage) {
-                    reject(new Error(lastErrorMessage));
-                    return;
-                }
-
-                resolve();
-            });
-        });
-
-        return;
-    }
-
-    await extensionStorage.set({ [key]: value });
-};
-
-const getExtensionStorageValue = async (extensionStorage: ExtensionStorageAreaLike, key: string) => {
-    if (extensionStorage.get.length >= 2) {
-        return await new Promise<string | undefined>((resolve, reject) => {
-            extensionStorage.get(key, (result) => {
-                const lastErrorMessage = getChromeRuntimeLastError();
-                if (lastErrorMessage) {
-                    reject(new Error(lastErrorMessage));
-                    return;
-                }
-
-                resolve(typeof result?.[key] === 'string' ? (result[key] as string) : undefined);
-            });
-        });
-    }
-
-    const result = await extensionStorage.get(key);
-    if (!result) {
-        return undefined;
-    }
-
-    return typeof result[key] === 'string' ? (result[key] as string) : undefined;
-};
-
-const saveJimakuApiKeyToStorage = async (apiKey: string) => {
-    const extensionStorage = getExtensionStorage();
-
-    if (extensionStorage) {
-        try {
-            await setExtensionStorageValue(extensionStorage, jimakuApiKeyStorageKey, apiKey);
-        } catch {
-            // Ignore extension storage failures and fall back to localStorage.
-        }
-    }
-
-    try {
-        window.localStorage.setItem(jimakuApiKeyStorageKey, apiKey);
-    } catch {
-        // Ignore environments that disallow storage access.
-    }
-};
-
-const loadJimakuApiKeyFromStorage = async () => {
-    const extensionStorage = getExtensionStorage();
-
-    if (extensionStorage) {
-        try {
-            const value = await getExtensionStorageValue(extensionStorage, jimakuApiKeyStorageKey);
-            if (value !== undefined) {
-                return value;
-            }
-        } catch {
-            // Ignore extension storage failures and fall back to localStorage.
-        }
-    }
-
-    try {
-        return window.localStorage.getItem(jimakuApiKeyStorageKey) ?? '';
-    } catch {
-        return '';
-    }
 };
 
 const normalizeDetectedTitleHint = (hint?: string) => {
@@ -165,15 +55,20 @@ const normalizeDetectedTitleHint = (hint?: string) => {
     return trimmedHint;
 };
 
-export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, detectedTitleHint }: Props) {
+export default function OnlineSubtitleSourceDialog({
+    open,
+    onClose,
+    onImport,
+    detectedTitleHint,
+    jimakuApiKey,
+    onJimakuApiKeyChange,
+}: Props) {
     const { t } = useTranslation();
     const [source, setSource] = useState<Source>('jimaku');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string>();
 
-    const [jimakuApiKey, setJimakuApiKey] = useState('');
     const [query, setQuery] = useState('');
-    const [didLoadJimakuApiKey, setDidLoadJimakuApiKey] = useState(false);
     const [jimakuEntries, setJimakuEntries] = useState<{ id: number; name: string }[]>([]);
     const [jimakuSelectedEntryId, setJimakuSelectedEntryId] = useState<number>();
     const [jimakuFiles, setJimakuFiles] = useState<OnlineSubtitleImportCandidate[]>([]);
@@ -196,11 +91,6 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
     const isSearchDisabled =
         loading || query.trim().length === 0 || (source === 'jimaku' && jimakuApiKey.trim().length === 0);
 
-    const loadJimakuApiKey = useCallback(async () => {
-        setJimakuApiKey(await loadJimakuApiKeyFromStorage());
-        setDidLoadJimakuApiKey(true);
-    }, []);
-
     const resetState = useCallback(() => {
         setLoading(false);
         setError(undefined);
@@ -212,10 +102,9 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
         setAjattFiles([]);
     }, []);
 
-    const handleDialogEntered = useCallback(async () => {
-        await loadJimakuApiKey();
+    const handleDialogEntered = useCallback(() => {
         resetState();
-    }, [loadJimakuApiKey, resetState]);
+    }, [resetState]);
 
     const handleSearchJimaku = useCallback(async () => {
         setError(undefined);
@@ -316,14 +205,6 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
         await handleSearchAjatt();
     }, [handleSearchAjatt, handleSearchJimaku, source]);
 
-    useEffect(() => {
-        if (!open || !didLoadJimakuApiKey) {
-            return;
-        }
-
-        void saveJimakuApiKeyToStorage(jimakuApiKey);
-    }, [didLoadJimakuApiKey, jimakuApiKey, open]);
-
     return (
         <Dialog
             open={open}
@@ -378,7 +259,7 @@ export default function OnlineSubtitleSourceDialog({ open, onClose, onImport, de
                             <TextField
                                 label={t('extension.videoDataSync.jimakuApiKey', { defaultValue: 'Jimaku API Key' })}
                                 value={jimakuApiKey}
-                                onChange={(e) => setJimakuApiKey(e.target.value)}
+                                onChange={(e) => onJimakuApiKeyChange(e.target.value)}
                                 helperText={t('extension.videoDataSync.jimakuApiKeyAutosaveHint', {
                                     defaultValue: 'Only used for jimaku.cc. Saved automatically after typing.',
                                 })}
