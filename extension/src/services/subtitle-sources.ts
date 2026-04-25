@@ -127,6 +127,7 @@ export class JimakuClient {
     private readonly _baseUrl: string;
     private readonly _minRequestIntervalMs: number;
     private _lastRequestTimestampMs?: number;
+    private _lastRateLimit?: JimakuRateLimit;
 
     constructor({ apiKey, baseUrl = defaultJimakuBaseUrl, minRequestIntervalMs = 1000 }: JimakuClientOptions) {
         const trimmedApiKey = apiKey.trim();
@@ -182,6 +183,7 @@ export class JimakuClient {
         this._lastRequestTimestampMs = Date.now();
 
         const rateLimit = parseRateLimit(response.headers);
+        this._lastRateLimit = rateLimit;
         const bodyText = await response.text();
         const parsedBody = parseJsonSafely(bodyText) as T | JimakuErrorPayload | undefined;
 
@@ -204,6 +206,21 @@ export class JimakuClient {
     }
 
     private async _waitIfNeeded() {
+        // Prioritize server-reported rate limit data over hard-coded interval
+        if (this._lastRateLimit !== undefined) {
+            const { remaining, resetAfterSeconds } = this._lastRateLimit;
+
+            if (remaining !== undefined && remaining <= 0 && resetAfterSeconds !== undefined && resetAfterSeconds > 0) {
+                await new Promise((resolve) => setTimeout(resolve, resetAfterSeconds * 1000));
+                return;
+            }
+
+            // If we still have quota remaining, skip the hard-coded wait
+            if (remaining !== undefined && remaining > 0) {
+                return;
+            }
+        }
+
         if (this._lastRequestTimestampMs === undefined || this._minRequestIntervalMs <= 0) {
             return;
         }
