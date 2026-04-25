@@ -15,7 +15,7 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { JimakuClient, listAjattDirectoryFiles, searchAjatt } from '@/services/subtitle-sources';
 
@@ -102,9 +102,11 @@ export default function OnlineSubtitleSourceDialog({
         setAjattFiles([]);
     }, []);
 
-    const handleDialogEntered = useCallback(() => {
-        resetState();
-    }, [resetState]);
+    useEffect(() => {
+        if (open) {
+            resetState();
+        }
+    }, [open, resetState]);
 
     const handleSearchJimaku = useCallback(async () => {
         setError(undefined);
@@ -211,7 +213,7 @@ export default function OnlineSubtitleSourceDialog({
             onClose={onClose}
             fullWidth
             maxWidth="md"
-            TransitionProps={{ onEntered: handleDialogEntered }}
+
         >
             <DialogTitle>
                 {t('extension.videoDataSync.onlineSubtitleSources', { defaultValue: 'Online subtitle sources' })}
@@ -255,93 +257,83 @@ export default function OnlineSubtitleSourceDialog({
                     </Box>
 
                     {source === 'jimaku' && (
-                        <Stack spacing={2}>
-                            <TextField
-                                label={t('extension.videoDataSync.jimakuApiKey', { defaultValue: 'Jimaku API Key' })}
-                                value={jimakuApiKey}
-                                onChange={(e) => onJimakuApiKeyChange(e.target.value)}
-                                helperText={t('extension.videoDataSync.jimakuApiKeyAutosaveHint', {
-                                    defaultValue: 'Only used for jimaku.cc. Saved automatically after typing.',
-                                })}
-                                fullWidth
-                            />
+                        <TextField
+                            label={t('extension.videoDataSync.jimakuApiKey', { defaultValue: 'Jimaku API Key' })}
+                            value={jimakuApiKey}
+                            onChange={(e) => onJimakuApiKeyChange(e.target.value)}
+                            helperText={t('extension.videoDataSync.jimakuApiKeyAutosaveHint', {
+                                defaultValue: 'Only used for jimaku.cc. Saved automatically after typing.',
+                            })}
+                            fullWidth
+                        />
+                    )}
+
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
                             <Typography variant="subtitle2">
-                                {t('extension.videoDataSync.entries', { defaultValue: 'Entries' })}
+                                {source === 'jimaku'
+                                    ? t('extension.videoDataSync.entries', { defaultValue: 'Entries' })
+                                    : t('extension.videoDataSync.directories', { defaultValue: 'Directories' })}
                             </Typography>
                             <List
                                 dense
-                                sx={{ maxHeight: 180, overflow: 'auto', border: '1px solid', borderColor: 'divider' }}
+                                sx={{ maxHeight: 220, overflow: 'auto', border: '1px solid', borderColor: 'divider' }}
                             >
-                                {jimakuEntries.map((entry) => (
+                                {(source === 'jimaku' ? jimakuEntries : ajattEntries).map((entry) => (
                                     <ListItemButton
-                                        key={entry.id}
-                                        onClick={() => handleLoadJimakuFiles(entry.id)}
-                                        selected={jimakuSelectedEntryId === entry.id}
+                                        key={source === 'jimaku' ? (entry as { id: number }).id : (entry as { path: string }).path}
+                                        onClick={() =>
+                                            source === 'jimaku'
+                                                ? handleLoadJimakuFiles((entry as { id: number }).id)
+                                                : handleLoadAjattFiles((entry as { path: string }).path)
+                                        }
+                                        selected={
+                                            source === 'jimaku'
+                                                ? jimakuSelectedEntryId === (entry as { id: number }).id
+                                                : ajattSelectedPath === (entry as { path: string }).path
+                                        }
                                     >
                                         <ListItemText primary={entry.name} />
                                     </ListItemButton>
                                 ))}
-                                {jimakuEntries.length === 0 && (
+                                {(source === 'jimaku' ? jimakuEntries : ajattEntries).length === 0 && (
                                     <ListItem>
                                         <ListItemText
-                                            primary={t('extension.videoDataSync.noEntries', {
-                                                defaultValue: emptyStateText.entries,
-                                            })}
+                                            primary={t(
+                                                source === 'jimaku'
+                                                    ? 'extension.videoDataSync.noEntries'
+                                                    : 'extension.videoDataSync.noDirectories',
+                                                {
+                                                    defaultValue:
+                                                        source === 'jimaku' ? emptyStateText.entries : emptyStateText.directories,
+                                                }
+                                            )}
                                         />
                                     </ListItem>
                                 )}
                             </List>
                         </Stack>
-                    )}
 
-                    {source === 'ajatt' && (
-                        <Stack spacing={2}>
+                        <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
                             <Typography variant="subtitle2">
-                                {t('extension.videoDataSync.directories', { defaultValue: 'Directories' })}
+                                {t('extension.videoDataSync.availableFiles', { defaultValue: 'Available files' })}
                             </Typography>
-                            <List
-                                dense
-                                sx={{ maxHeight: 180, overflow: 'auto', border: '1px solid', borderColor: 'divider' }}
-                            >
-                                {ajattEntries.map((entry) => (
-                                    <ListItemButton
-                                        key={entry.path}
-                                        onClick={() => handleLoadAjattFiles(entry.path)}
-                                        selected={ajattSelectedPath === entry.path}
-                                    >
-                                        <ListItemText primary={entry.name} />
+                            <List dense sx={{ maxHeight: 220, overflow: 'auto', border: '1px solid', borderColor: 'divider' }}>
+                                {selectedFiles.map((file) => (
+                                    <ListItemButton key={file.url} onClick={() => handleImport(file)}>
+                                        <ListItemText primary={file.name} secondary={file.url} />
                                     </ListItemButton>
                                 ))}
-                                {ajattEntries.length === 0 && (
+                                {selectedFiles.length === 0 && (
                                     <ListItem>
                                         <ListItemText
-                                            primary={t('extension.videoDataSync.noDirectories', {
-                                                defaultValue: emptyStateText.directories,
-                                            })}
+                                            primary={t('extension.videoDataSync.noFiles', { defaultValue: emptyStateText.files })}
                                         />
                                     </ListItem>
                                 )}
                             </List>
                         </Stack>
-                    )}
-
-                    <Typography variant="subtitle2">
-                        {t('extension.videoDataSync.availableFiles', { defaultValue: 'Available files' })}
-                    </Typography>
-                    <List dense sx={{ maxHeight: 220, overflow: 'auto', border: '1px solid', borderColor: 'divider' }}>
-                        {selectedFiles.map((file) => (
-                            <ListItemButton key={file.url} onClick={() => handleImport(file)}>
-                                <ListItemText primary={file.name} secondary={file.url} />
-                            </ListItemButton>
-                        ))}
-                        {selectedFiles.length === 0 && (
-                            <ListItem>
-                                <ListItemText
-                                    primary={t('extension.videoDataSync.noFiles', { defaultValue: emptyStateText.files })}
-                                />
-                            </ListItem>
-                        )}
-                    </List>
+                    </Box>
                     {loading && (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
                             <CircularProgress size={22} />
