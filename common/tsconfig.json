@@ -10,5 +10,5 @@
         "downlevelIteration": true,
         "moduleResolution": "Node"
     },
-    "include": ["./src/**/*", "decs.d.ts", "vite-env.d.ts"]
+    "include": ["./src/**/*", "./file-system-access/**/*", "./copy-history/**/*", "./blob-url/**/*", "decs.d.ts", "vite-env.d.ts"]
 }

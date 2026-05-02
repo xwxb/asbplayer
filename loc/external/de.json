@@ -1,1 +1,10 @@
-{}
+{
+    "landing": {
+        "restoreLastSession": "Restore last session",
+        "or": "or"
+    },
+    "error": {
+        "fileNotFound": "File not found: {{fileName}}",
+        "permissionDenied": "Permission denied for file: {{fileName}}"
+    }
+}

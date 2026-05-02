@@ -60,6 +60,13 @@ import { useAppWebSocketClient } from '../hooks/use-app-web-socket-client';
 import { LoadSubtitlesCommand } from '../../web-socket-client';
 import { ExtensionBridgedCopyHistoryRepository } from '../services/extension-bridged-copy-history-repository';
 import { IndexedDBCopyHistoryRepository } from '../../copy-history';
+import { IndexedDBFileSystemAccessRepository } from '../../file-system-access';
+import {
+    supportsFileSystemAccess,
+    requestFileHandlePermissions,
+    resolveFilesFromHandles,
+    showFilePicker,
+} from '../../file-system-access/file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
 import mp3WorkerFactory from '../../audio-clip/mp3-encoder-worker.ts?worker';
@@ -347,6 +354,8 @@ function App({
     const [disableKeyEvents, setDisableKeyEvents] = useState<boolean>(false);
     const [tab, setTab] = useState<VideoTabModel>();
     const [availableTabs, setAvailableTabs] = useState<VideoTabModel[]>();
+    const fileSystemAccessRepository = useMemo(() => new IndexedDBFileSystemAccessRepository(), []);
+    const [canRestoreLastSession, setCanRestoreLastSession] = useState<boolean>(false);
     const [isSidePanelOpen, setIsSidePanelOpen] = useState<boolean>(false);
     const [statisticsOverlayOpen, setStatisticsOverlayOpen] = useState<boolean>(false);
     const [statisticsOverlayDismissed, setStatisticsOverlayDismissed] = useState<boolean>(false);
@@ -882,8 +891,7 @@ function App({
         setTab(tab);
     }, []);
 
-    const handleFiles = useCallback(
-        ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }) => {
+    const handleFiles = useCallback(async ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }) => {
             try {
                 let { subtitleFiles, videoFile } = extractSources(files);
 
@@ -936,6 +944,31 @@ function App({
                 if (subtitleFiles.length > 0) {
                     const subtitleFileName = subtitleFiles[0].name;
                     setFileName(subtitleFileName.substring(0, subtitleFileName.lastIndexOf('.')));
+                }
+
+                // Save file handles for restoration if supported
+                if (supportsFileSystemAccess()) {
+                    const handles: FileSystemFileHandle[] = [];
+                    if (videoFile) {
+                        const videoHandle = (videoFile as any).handle as FileSystemFileHandle | undefined;
+                        if (videoHandle) {
+                            handles.push(videoHandle);
+                        }
+                    }
+                    for (const sf of subtitleFiles) {
+                        const subtitleHandle = (sf as any).handle as FileSystemFileHandle | undefined;
+                        if (subtitleHandle) {
+                            handles.push(subtitleHandle);
+                        }
+                    }
+                    if (handles.length > 0) {
+                        const videoHandle = videoFile ? ((videoFile as any).handle as FileSystemFileHandle | undefined) : undefined;
+                        const subtitleHandles = subtitleFiles
+                            .map((f) => (f as any).handle as FileSystemFileHandle | undefined)
+                            .filter((h): h is FileSystemFileHandle => h !== undefined);
+                        await fileSystemAccessRepository.save({ videoHandle, subtitleHandles });
+                        setCanRestoreLastSession(true);
+                    }
                 }
             } catch (e) {
                 console.error(e);
@@ -1136,6 +1169,18 @@ function App({
     }, [extension, inVideoPlayer, handleDownloadImage]);
 
     useEffect(() => {
+        if (!supportsFileSystemAccess()) {
+            return;
+        }
+
+        fileSystemAccessRepository.fetch().then((record) => {
+            setCanRestoreLastSession(!!record && ((record.videoHandle ? true : false) || record.subtitleHandles.length > 0));
+        }).catch(() => {
+            setCanRestoreLastSession(false);
+        });
+    }, [fileSystemAccessRepository]);
+
+    useEffect(() => {
         if (inVideoPlayer) {
             return;
         }
@@ -1225,6 +1270,41 @@ function App({
 
     const handleFileSelector = useCallback(() => fileInputRef.current?.click(), []);
 
+    const handleRestoreLastSession = useCallback(async () => {
+        try {
+            const record = await fileSystemAccessRepository.fetch();
+            if (!record) {
+                return;
+            }
+
+            const handles: FileSystemFileHandle[] = [];
+            if (record.videoHandle) {
+                handles.push(record.videoHandle);
+            }
+            handles.push(...record.subtitleHandles);
+
+            const { granted, denied } = await requestFileHandlePermissions(handles);
+            if (denied.length > 0) {
+                const names = denied.map((h) => h.name).join(", ");
+                handleError(t("error.permissionDenied", { fileName: names }));
+                return;
+            }
+
+            const { files, errors } = await resolveFilesFromHandles(granted);
+            if (errors.length > 0) {
+                const names = errors.map((h) => h.name).join(", ");
+                handleError(t("error.fileNotFound", { fileName: names }));
+                await fileSystemAccessRepository.clear();
+                setCanRestoreLastSession(false);
+                return;
+            }
+
+            handleFiles({ files });
+        } catch (e) {
+            console.error(e);
+            handleError(e);
+        }
+    }, [fileSystemAccessRepository, handleError, handleFiles, t]);
     const handleVideoElementSelected = useCallback(
         async (videoElement: VideoTabModel) => {
             const { id: tabId, synced, src } = videoElement;
@@ -1587,6 +1667,8 @@ function App({
                                             dragging={dragging}
                                             appBarHidden={appBarHidden}
                                             videoElements={availableTabs ?? []}
+                                            canRestoreLastSession={canRestoreLastSession}
+                                            onRestoreLastSession={handleRestoreLastSession}
                                             onFileSelector={handleFileSelector}
                                             onVideoElementSelected={handleVideoElementSelected}
                                         />
