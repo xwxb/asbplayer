@@ -117,7 +117,7 @@ function extractSources(files: FileList | File[]): MediaSources {
             throw new LocalizedError('error.unknownExtension', { fileName: f.name });
         }
 
-        const extension = f.name.substring(extensionStartIndex + 1, f.name.length);
+        const extension = f.name.substring(extensionStartIndex + 1, f.name.length).toLowerCase();
         switch (extension) {
             case 'ass':
             case 'srt':

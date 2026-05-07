@@ -71,15 +71,12 @@ export async function showFilePicker(): Promise<FileSystemFileHandle[] | undefin
             multiple: true,
             types: [
                 {
-                    description: 'Media files',
+                    description: 'Media and subtitle files',
                     accept: {
                         'video/*': videoExtensions,
                         'audio/*': audioExtensions,
+                        'text/*': subtitleExtensions,
                     },
-                },
-                {
-                    description: 'Subtitle files',
-                    accept: { 'text/*': subtitleExtensions },
                 },
             ],
         });
