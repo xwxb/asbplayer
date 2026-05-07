@@ -60,6 +60,13 @@ import { useAppWebSocketClient } from '../hooks/use-app-web-socket-client';
 import { LoadSubtitlesCommand } from '../../web-socket-client';
 import { ExtensionBridgedCopyHistoryRepository } from '../services/extension-bridged-copy-history-repository';
 import { IndexedDBCopyHistoryRepository } from '../../copy-history';
+import {
+    IndexedDBFileSessionRepository,
+    supportsFileSystemAccess,
+    showFilePicker,
+    requestPermissions,
+    resolveFiles,
+} from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
 import mp3WorkerFactory from '../../audio-clip/mp3-encoder-worker.ts?worker';
@@ -350,6 +357,11 @@ function App({
     const [isSidePanelOpen, setIsSidePanelOpen] = useState<boolean>(false);
     const [statisticsOverlayOpen, setStatisticsOverlayOpen] = useState<boolean>(false);
     const [statisticsOverlayDismissed, setStatisticsOverlayDismissed] = useState<boolean>(false);
+    const fileSessionRepository = useMemo(
+        () => (supportsFileSystemAccess() ? new IndexedDBFileSessionRepository() : undefined),
+        []
+    );
+    const [canRestoreLastSession, setCanRestoreLastSession] = useState<boolean>(false);
     const [lastError, setLastError] = useState<any>();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { subtitleFiles } = sources;
@@ -878,6 +890,16 @@ function App({
         return extension.subscribeTabs(onTabs);
     }, [availableTabs, tab, extension, handleError, t]);
 
+    // === File System Access: check for restorable session on mount ===
+    useEffect(() => {
+        if (!fileSessionRepository) return;
+        fileSessionRepository.fetch().then((record) => {
+            if (record && (record.videoHandle || record.subtitleHandles.length > 0)) {
+                setCanRestoreLastSession(true);
+            }
+        });
+    }, [fileSessionRepository]);
+
     const handleTabSelected = useCallback((tab: VideoTabModel) => {
         setTab(tab);
     }, []);
@@ -944,6 +966,67 @@ function App({
         },
         [handleError]
     );
+
+    // === File System Access: save handles after picking, restore on revisit ===
+    const saveFileSession = useCallback(
+        async (handles: FileSystemFileHandle[]) => {
+            if (!fileSessionRepository) return;
+            let videoHandle: FileSystemFileHandle | undefined;
+            const subtitleHandles: FileSystemFileHandle[] = [];
+            for (const h of handles) {
+                const name = h.name.toLowerCase();
+                const ext = name.substring(name.lastIndexOf('.'));
+                if (['.mkv', '.mp4', '.m4v', '.avi', '.webm', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'].includes(ext)) {
+                    videoHandle = h;
+                } else {
+                    subtitleHandles.push(h);
+                }
+            }
+            await fileSessionRepository.save({ videoHandle, subtitleHandles });
+            setCanRestoreLastSession(true);
+        },
+        [fileSessionRepository]
+    );
+
+    const handleRestoreLastSession = useCallback(async () => {
+        if (!fileSessionRepository) return;
+        try {
+            const record = await fileSessionRepository.fetch();
+            if (!record) return;
+
+            const allHandles = [
+                ...(record.videoHandle ? [record.videoHandle] : []),
+                ...record.subtitleHandles,
+            ];
+
+            const { granted, denied } = await requestPermissions(allHandles);
+            if (denied.length > 0) {
+                console.warn('Permission denied for handles:', denied.map((h) => h.name));
+            }
+            if (granted.length === 0) {
+                handleError(t('error.restoreSessionPermissionDenied'));
+                setCanRestoreLastSession(false);
+                await fileSessionRepository.clear();
+                return;
+            }
+
+            const { files, errors } = await resolveFiles(granted);
+            if (errors.length > 0) {
+                console.warn('Failed to resolve handles:', errors.map((h) => h.name));
+            }
+            if (files.length === 0) {
+                handleError(t('error.restoreSessionFailed'));
+                setCanRestoreLastSession(false);
+                await fileSessionRepository.clear();
+                return;
+            }
+
+            handleFiles({ files });
+        } catch (e) {
+            console.error('Failed to restore last session:', e);
+            handleError(e);
+        }
+    }, [fileSessionRepository, handleFiles, handleError, t]);
 
     const handleDirectory = useCallback(
         async (items: DataTransferItemList) => {
@@ -1223,7 +1306,19 @@ function App({
         }
     }, [handleFiles]);
 
-    const handleFileSelector = useCallback(() => fileInputRef.current?.click(), []);
+    const handleFileSelector = useCallback(async () => {
+        if (supportsFileSystemAccess()) {
+            const handles = await showFilePicker();
+            if (!handles || handles.length === 0) return;
+            const { files } = await resolveFiles(handles);
+            if (files.length > 0) {
+                handleFiles({ files });
+                saveFileSession(handles);
+            }
+        } else {
+            fileInputRef.current?.click();
+        }
+    }, [handleFiles, saveFileSession]);
 
     const handleVideoElementSelected = useCallback(
         async (videoElement: VideoTabModel) => {
@@ -1587,8 +1682,10 @@ function App({
                                             dragging={dragging}
                                             appBarHidden={appBarHidden}
                                             videoElements={availableTabs ?? []}
+                                            canRestoreLastSession={canRestoreLastSession}
                                             onFileSelector={handleFileSelector}
                                             onVideoElementSelected={handleVideoElementSelected}
+                                            onRestoreLastSession={handleRestoreLastSession}
                                         />
                                     )}
                                     <DragOverlay
