@@ -4,6 +4,26 @@
  * and utilities to re-acquire permissions and resolve handles back to File objects on revisit.
  */
 
+const videoExtensions = ['.mkv', '.mp4', '.m4v', '.avi', '.webm'] as const;
+const audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'] as const;
+const mediaExtensions = new Set<string>([...videoExtensions, ...audioExtensions]);
+const subtitleExtensions = new Set([
+    '.srt', '.ass', '.vtt', '.sup', '.nfvtt', '.ytxml', '.ytsrv3', '.dfxp', '.ttml2', '.bbjson',
+]);
+
+function extOf(name: string): string {
+    const i = name.lastIndexOf('.');
+    return i >= 0 ? name.substring(i).toLowerCase() : '';
+}
+
+export function isMediaExtension(name: string): boolean {
+    return mediaExtensions.has(extOf(name));
+}
+
+export function isSubtitleExtension(name: string): boolean {
+    return subtitleExtensions.has(extOf(name));
+}
+
 export function supportsFileSystemAccess(): boolean {
     return typeof window !== 'undefined' && 'showOpenFilePicker' in window;
 }
@@ -57,10 +77,6 @@ export async function resolveFiles(
     return { files, errors };
 }
 
-const videoExtensions = ['.mkv', '.mp4', '.m4v', '.avi', '.webm'];
-const audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'];
-const subtitleExtensions = ['.srt', '.ass', '.vtt', '.sup', '.nfvtt', '.ytxml', '.ytsrv3', '.dfxp', '.ttml2', '.bbjson'];
-
 export async function showFilePicker(): Promise<FileSystemFileHandle[] | undefined> {
     if (!supportsFileSystemAccess()) {
         return undefined;
@@ -73,9 +89,9 @@ export async function showFilePicker(): Promise<FileSystemFileHandle[] | undefin
                 {
                     description: 'Media and subtitle files',
                     accept: {
-                        'video/*': videoExtensions,
-                        'audio/*': audioExtensions,
-                        'text/*': subtitleExtensions,
+                        'video/*': [...videoExtensions],
+                        'audio/*': [...audioExtensions],
+                        'text/*': [...subtitleExtensions],
                     },
                 },
             ],

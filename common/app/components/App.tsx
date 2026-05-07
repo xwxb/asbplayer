@@ -66,6 +66,7 @@ import {
     showFilePicker,
     requestPermissions,
     resolveFiles,
+    isMediaExtension,
 } from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
@@ -905,7 +906,7 @@ function App({
     }, []);
 
     const handleFiles = useCallback(
-        ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }) => {
+        ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }): boolean => {
             try {
                 let { subtitleFiles, videoFile } = extractSources(files);
 
@@ -959,30 +960,30 @@ function App({
                     const subtitleFileName = subtitleFiles[0].name;
                     setFileName(subtitleFileName.substring(0, subtitleFileName.lastIndexOf('.')));
                 }
+                return true;
             } catch (e) {
                 console.error(e);
                 handleError(e);
+                return false;
             }
         },
         [handleError]
     );
 
-    // === File System Access: save handles after picking, restore on revisit ===
+    // === File System Access: incrementally merge handles into the saved session ===
     const saveFileSession = useCallback(
         async (handles: FileSystemFileHandle[]) => {
             if (!fileSessionRepository) return;
             let videoHandle: FileSystemFileHandle | undefined;
             const subtitleHandles: FileSystemFileHandle[] = [];
             for (const h of handles) {
-                const name = h.name.toLowerCase();
-                const ext = name.substring(name.lastIndexOf('.'));
-                if (['.mkv', '.mp4', '.m4v', '.avi', '.webm', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'].includes(ext)) {
+                if (isMediaExtension(h.name)) {
                     videoHandle = h;
                 } else {
                     subtitleHandles.push(h);
                 }
             }
-            await fileSessionRepository.save({ videoHandle, subtitleHandles });
+            await fileSessionRepository.merge({ videoHandle, subtitleHandles });
             setCanRestoreLastSession(true);
         },
         [fileSessionRepository]
@@ -1001,20 +1002,12 @@ function App({
 
             const { granted, denied } = await requestPermissions(allHandles);
             if (denied.length > 0) {
-                console.warn('Permission denied for handles:', denied.map((h) => h.name));
-            }
-            if (granted.length === 0) {
                 handleError(t('error.restoreSessionPermissionDenied'));
-                setCanRestoreLastSession(false);
-                await fileSessionRepository.clear();
                 return;
             }
 
             const { files, errors } = await resolveFiles(granted);
             if (errors.length > 0) {
-                console.warn('Failed to resolve handles:', errors.map((h) => h.name));
-            }
-            if (files.length === 0) {
                 handleError(t('error.restoreSessionFailed'));
                 setCanRestoreLastSession(false);
                 await fileSessionRepository.clear();
@@ -1311,8 +1304,8 @@ function App({
             const handles = await showFilePicker();
             if (!handles || handles.length === 0) return;
             const { files } = await resolveFiles(handles);
-            if (files.length > 0) {
-                handleFiles({ files });
+            if (files.length === 0) return;
+            if (handleFiles({ files })) {
                 saveFileSession(handles);
             }
         } else {

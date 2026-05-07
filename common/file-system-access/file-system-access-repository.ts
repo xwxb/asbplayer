@@ -20,7 +20,8 @@ class FileSessionDatabase extends Dexie {
 
 export interface FileSessionRepository {
     fetch: () => Promise<FileSessionRecord | undefined>;
-    save: (record: Omit<FileSessionRecord, 'id' | 'timestamp'>) => Promise<void>;
+    /** Merge new handles into the existing record, mirroring handleFiles' source-merge logic. */
+    merge: (incoming: Omit<FileSessionRecord, 'id' | 'timestamp'>) => Promise<void>;
     clear: () => Promise<void>;
 }
 
@@ -32,13 +33,16 @@ export class IndexedDBFileSessionRepository implements FileSessionRepository {
         return records.length > 0 ? records[0] : undefined;
     }
 
-    async save(record: Omit<FileSessionRecord, 'id' | 'timestamp'>): Promise<void> {
+    async merge(incoming: Omit<FileSessionRecord, 'id' | 'timestamp'>): Promise<void> {
+        const existing = await this.fetch();
+        const merged: Omit<FileSessionRecord, 'id' | 'timestamp'> = {
+            videoHandle: incoming.videoHandle ?? existing?.videoHandle,
+            subtitleHandles: incoming.subtitleHandles.length > 0
+                ? incoming.subtitleHandles
+                : (existing?.subtitleHandles ?? []),
+        };
         await this._db.sessions.clear();
-        await this._db.sessions.add({
-            ...record,
-            id: 1,
-            timestamp: Date.now(),
-        });
+        await this._db.sessions.add({ ...merged, id: 1, timestamp: Date.now() });
     }
 
     async clear(): Promise<void> {
