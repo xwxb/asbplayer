@@ -60,6 +60,16 @@ import { useAppWebSocketClient } from '../hooks/use-app-web-socket-client';
 import { LoadSubtitlesCommand } from '../../web-socket-client';
 import { ExtensionBridgedCopyHistoryRepository } from '../services/extension-bridged-copy-history-repository';
 import { IndexedDBCopyHistoryRepository } from '../../copy-history';
+import {
+    IndexedDBFileSessionRepository,
+    supportsFileSystemAccess,
+    showFilePicker,
+    requestPermissions,
+    resolveFiles,
+    isMediaExtension,
+    isSubtitleExtension,
+    inputAcceptFileExtensions,
+} from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
 import mp3WorkerFactory from '../../audio-clip/mp3-encoder-worker.ts?worker';
@@ -75,9 +85,6 @@ import StatisticsOverlay, { StatisticsOverlayProps } from '../../components/Stat
 const latestExtensionVersion = '1.15.0';
 const extensionUrl =
     'https://chromewebstore.google.com/detail/asbplayer-language-learni/hkledmpjpaehamkiehglnbelcpdflcab';
-
-const INPUT_ACCEPT_FILE_EXTENSIONS =
-    '.srt,.ass,.vtt,.sup,.mp3,.m4a,.aac,.flac,.ogg,.wav,.opus,.mkv,.mp4,.avi,.m4v,.webm';
 
 const useContentStyles = makeStyles<Theme, ContentProps>((theme) => ({
     content: {
@@ -110,7 +117,7 @@ function extractSources(files: FileList | File[]): MediaSources {
             throw new LocalizedError('error.unknownExtension', { fileName: f.name });
         }
 
-        const extension = f.name.substring(extensionStartIndex + 1, f.name.length);
+        const extension = f.name.substring(extensionStartIndex + 1, f.name.length).toLowerCase();
         switch (extension) {
             case 'ass':
             case 'srt':
@@ -350,6 +357,11 @@ function App({
     const [isSidePanelOpen, setIsSidePanelOpen] = useState<boolean>(false);
     const [statisticsOverlayOpen, setStatisticsOverlayOpen] = useState<boolean>(false);
     const [statisticsOverlayDismissed, setStatisticsOverlayDismissed] = useState<boolean>(false);
+    // Build once per mount so repository identity stays stable for effects/callbacks.
+    const [fileSessionRepository] = useState<IndexedDBFileSessionRepository | undefined>(() =>
+        supportsFileSystemAccess() ? new IndexedDBFileSessionRepository() : undefined
+    );
+    const [canRestoreLastSession, setCanRestoreLastSession] = useState<boolean>(false);
     const [lastError, setLastError] = useState<any>();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { subtitleFiles } = sources;
@@ -878,12 +890,22 @@ function App({
         return extension.subscribeTabs(onTabs);
     }, [availableTabs, tab, extension, handleError, t]);
 
+    // === File System Access: check for restorable session on mount ===
+    useEffect(() => {
+        if (!fileSessionRepository) return;
+        fileSessionRepository.fetch().then((record) => {
+            if (record && (record.videoHandle || record.subtitleHandles.length > 0)) {
+                setCanRestoreLastSession(true);
+            }
+        });
+    }, [fileSessionRepository]);
+
     const handleTabSelected = useCallback((tab: VideoTabModel) => {
         setTab(tab);
     }, []);
 
     const handleFiles = useCallback(
-        ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }) => {
+        ({ files, flattenSubtitleFiles }: { files: FileList | File[]; flattenSubtitleFiles?: boolean }): boolean => {
             try {
                 let { subtitleFiles, videoFile } = extractSources(files);
 
@@ -937,13 +959,81 @@ function App({
                     const subtitleFileName = subtitleFiles[0].name;
                     setFileName(subtitleFileName.substring(0, subtitleFileName.lastIndexOf('.')));
                 }
+                return true;
             } catch (e) {
                 console.error(e);
                 handleError(e);
+                return false;
             }
         },
         [handleError]
     );
+
+    // === File System Access: incrementally merge handles into the saved session ===
+    const saveFileSession = useCallback(
+        async (handles: FileSystemFileHandle[]) => {
+            if (!fileSessionRepository) return;
+            let videoHandle: FileSystemFileHandle | undefined;
+            const subtitleHandles: FileSystemFileHandle[] = [];
+            const unknownHandles: FileSystemFileHandle[] = [];
+            for (const h of handles) {
+                if (isMediaExtension(h.name)) {
+                    videoHandle = h;
+                } else if (isSubtitleExtension(h.name)) {
+                    subtitleHandles.push(h);
+                } else {
+                    unknownHandles.push(h);
+                }
+            }
+
+            if (unknownHandles.length > 0) {
+                console.warn('Ignoring unsupported handles for file session restore', unknownHandles.map((h) => h.name));
+            }
+
+            if (!videoHandle && subtitleHandles.length === 0) {
+                return;
+            }
+
+            await fileSessionRepository.merge({ videoHandle, subtitleHandles });
+            setCanRestoreLastSession(true);
+        },
+        [fileSessionRepository]
+    );
+
+    const handleRestoreLastSession = useCallback(async () => {
+        if (!fileSessionRepository) return;
+        try {
+            const record = await fileSessionRepository.fetch();
+            if (!record) return;
+
+            const allHandles = [
+                ...(record.videoHandle ? [record.videoHandle] : []),
+                ...record.subtitleHandles,
+            ];
+
+            const { granted, denied } = await requestPermissions(allHandles);
+            if (denied.length > 0) {
+                handleError(t('error.restoreSessionPermissionDenied'));
+                return;
+            }
+
+            const { files, errors } = await resolveFiles(granted);
+            if (errors.length > 0) {
+                handleError(t('error.restoreSessionFailed'));
+                setCanRestoreLastSession(false);
+                await fileSessionRepository.clear();
+                return;
+            }
+
+            if (!handleFiles({ files })) {
+                setCanRestoreLastSession(false);
+                await fileSessionRepository.clear();
+            }
+        } catch (e) {
+            console.error('Failed to restore last session:', e);
+            handleError(e);
+        }
+    }, [fileSessionRepository, handleFiles, handleError, t]);
 
     const handleDirectory = useCallback(
         async (items: DataTransferItemList) => {
@@ -1223,7 +1313,24 @@ function App({
         }
     }, [handleFiles]);
 
-    const handleFileSelector = useCallback(() => fileInputRef.current?.click(), []);
+    const handleFileSelector = useCallback(async () => {
+        if (supportsFileSystemAccess()) {
+            try {
+                const handles = await showFilePicker();
+                if (!handles || handles.length === 0) return;
+                const { files } = await resolveFiles(handles);
+                if (files.length === 0) return;
+                if (handleFiles({ files })) {
+                    await saveFileSession(handles);
+                }
+            } catch (e) {
+                console.error('Failed to pick files via File System Access API:', e);
+                handleError(e);
+            }
+        } else {
+            fileInputRef.current?.click();
+        }
+    }, [handleFiles, handleError, saveFileSession]);
 
     const handleVideoElementSelected = useCallback(
         async (videoElement: VideoTabModel) => {
@@ -1572,7 +1679,7 @@ function App({
                                 ref={fileInputRef}
                                 onChange={handleFileInputChange}
                                 type="file"
-                                accept={INPUT_ACCEPT_FILE_EXTENSIONS}
+                                accept={inputAcceptFileExtensions}
                                 multiple
                                 hidden
                             />
@@ -1587,8 +1694,10 @@ function App({
                                             dragging={dragging}
                                             appBarHidden={appBarHidden}
                                             videoElements={availableTabs ?? []}
+                                            canRestoreLastSession={canRestoreLastSession}
                                             onFileSelector={handleFileSelector}
                                             onVideoElementSelected={handleVideoElementSelected}
+                                            onRestoreLastSession={handleRestoreLastSession}
                                         />
                                     )}
                                     <DragOverlay
