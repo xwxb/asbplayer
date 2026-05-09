@@ -39,9 +39,8 @@ export class IndexedDBFileSessionRepository implements FileSessionRepository {
         // so the saved session still represents the latest complete set.
         const merged: Omit<FileSessionRecord, 'id' | 'timestamp'> = {
             videoHandle: incoming.videoHandle ?? existing?.videoHandle,
-            subtitleHandles: incoming.subtitleHandles.length > 0
-                ? incoming.subtitleHandles
-                : (existing?.subtitleHandles ?? []),
+            subtitleHandles:
+                incoming.subtitleHandles.length > 0 ? incoming.subtitleHandles : (existing?.subtitleHandles ?? []),
         };
         await this._db.sessions.clear();
         await this._db.sessions.add({ ...merged, id: 1, timestamp: Date.now() });

@@ -38,7 +38,10 @@ export const useFileSession = () => {
             }
 
             if (unknownHandles.length > 0) {
-                console.warn('Ignoring unsupported handles for file session restore', unknownHandles.map((h) => h.name));
+                console.warn(
+                    'Ignoring unsupported handles for file session restore',
+                    unknownHandles.map((h) => h.name)
+                );
             }
 
             if (!videoHandle && subtitleHandles.length === 0) {

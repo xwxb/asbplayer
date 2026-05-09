@@ -6,7 +6,18 @@
 
 const videoExtensions = ['.mkv', '.mp4', '.m4v', '.avi', '.webm'] as const;
 const audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'] as const;
-const subtitleExtensions = ['.srt', '.ass', '.vtt', '.sup', '.nfvtt', '.ytxml', '.ytsrv3', '.dfxp', '.ttml2', '.bbjson'] as const;
+const subtitleExtensions = [
+    '.srt',
+    '.ass',
+    '.vtt',
+    '.sup',
+    '.nfvtt',
+    '.ytxml',
+    '.ytsrv3',
+    '.dfxp',
+    '.ttml2',
+    '.bbjson',
+] as const;
 const mediaExtensions = new Set<string>([...videoExtensions, ...audioExtensions]);
 const subtitleExtensionSet = new Set<string>(subtitleExtensions);
 
