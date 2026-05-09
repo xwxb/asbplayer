@@ -51,6 +51,7 @@ import { useTranslation } from 'react-i18next';
 import { LocalizedError } from './localized-error';
 import { DisplaySubtitleModel } from './SubtitlePlayer';
 import { useCopyHistory } from '../hooks/use-copy-history';
+import { useFileSession } from '../hooks/use-file-session';
 import { useI18n } from '../hooks/use-i18n';
 import { useAppKeyBinder } from '../hooks/use-app-key-binder';
 import { useAnki } from '../hooks/use-anki';
@@ -61,13 +62,10 @@ import { LoadSubtitlesCommand } from '../../web-socket-client';
 import { ExtensionBridgedCopyHistoryRepository } from '../services/extension-bridged-copy-history-repository';
 import { IndexedDBCopyHistoryRepository } from '../../copy-history';
 import {
-    IndexedDBFileSessionRepository,
     supportsFileSystemAccess,
     showFilePicker,
     requestPermissions,
     resolveFiles,
-    isMediaExtension,
-    isSubtitleExtension,
     inputAcceptFileExtensions,
 } from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
@@ -357,11 +355,7 @@ function App({
     const [isSidePanelOpen, setIsSidePanelOpen] = useState<boolean>(false);
     const [statisticsOverlayOpen, setStatisticsOverlayOpen] = useState<boolean>(false);
     const [statisticsOverlayDismissed, setStatisticsOverlayDismissed] = useState<boolean>(false);
-    // Build once per mount so repository identity stays stable for effects/callbacks.
-    const [fileSessionRepository] = useState<IndexedDBFileSessionRepository | undefined>(() =>
-        supportsFileSystemAccess() ? new IndexedDBFileSessionRepository() : undefined
-    );
-    const [canRestoreLastSession, setCanRestoreLastSession] = useState<boolean>(false);
+    const { canRestoreLastSession, saveSession: saveFileSession, fetchSession, clearSession } = useFileSession();
     const [lastError, setLastError] = useState<any>();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { subtitleFiles } = sources;
@@ -889,17 +883,6 @@ function App({
 
         return extension.subscribeTabs(onTabs);
     }, [availableTabs, tab, extension, handleError, t]);
-
-    // === File System Access: check for restorable session on mount ===
-    useEffect(() => {
-        if (!fileSessionRepository) return;
-        fileSessionRepository.fetch().then((record) => {
-            if (record && (record.videoHandle || record.subtitleHandles.length > 0)) {
-                setCanRestoreLastSession(true);
-            }
-        });
-    }, [fileSessionRepository]);
-
     const handleTabSelected = useCallback((tab: VideoTabModel) => {
         setTab(tab);
     }, []);
@@ -969,47 +952,12 @@ function App({
         [handleError]
     );
 
-    // === File System Access: incrementally merge handles into the saved session ===
-    const saveFileSession = useCallback(
-        async (handles: FileSystemFileHandle[]) => {
-            if (!fileSessionRepository) return;
-            let videoHandle: FileSystemFileHandle | undefined;
-            const subtitleHandles: FileSystemFileHandle[] = [];
-            const unknownHandles: FileSystemFileHandle[] = [];
-            for (const h of handles) {
-                if (isMediaExtension(h.name)) {
-                    videoHandle = h;
-                } else if (isSubtitleExtension(h.name)) {
-                    subtitleHandles.push(h);
-                } else {
-                    unknownHandles.push(h);
-                }
-            }
-
-            if (unknownHandles.length > 0) {
-                console.warn('Ignoring unsupported handles for file session restore', unknownHandles.map((h) => h.name));
-            }
-
-            if (!videoHandle && subtitleHandles.length === 0) {
-                return;
-            }
-
-            await fileSessionRepository.merge({ videoHandle, subtitleHandles });
-            setCanRestoreLastSession(true);
-        },
-        [fileSessionRepository]
-    );
-
     const handleRestoreLastSession = useCallback(async () => {
-        if (!fileSessionRepository) return;
         try {
-            const record = await fileSessionRepository.fetch();
+            const record = await fetchSession();
             if (!record) return;
 
-            const allHandles = [
-                ...(record.videoHandle ? [record.videoHandle] : []),
-                ...record.subtitleHandles,
-            ];
+            const allHandles = [...(record.videoHandle ? [record.videoHandle] : []), ...record.subtitleHandles];
 
             const { granted, denied } = await requestPermissions(allHandles);
             if (denied.length > 0) {
@@ -1020,20 +968,18 @@ function App({
             const { files, errors } = await resolveFiles(granted);
             if (errors.length > 0) {
                 handleError(t('error.restoreSessionFailed'));
-                setCanRestoreLastSession(false);
-                await fileSessionRepository.clear();
+                await clearSession();
                 return;
             }
 
             if (!handleFiles({ files })) {
-                setCanRestoreLastSession(false);
-                await fileSessionRepository.clear();
+                await clearSession();
             }
         } catch (e) {
             console.error('Failed to restore last session:', e);
             handleError(e);
         }
-    }, [fileSessionRepository, handleFiles, handleError, t]);
+    }, [fetchSession, clearSession, handleFiles, handleError, t]);
 
     const handleDirectory = useCallback(
         async (items: DataTransferItemList) => {
