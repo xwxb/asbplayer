@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-    IndexedDBFileSessionRepository,
-    isMediaExtension,
-    isSubtitleExtension,
-    supportsFileSystemAccess,
-} from '../../file-system-access';
+import { IndexedDBFileSessionRepository, supportsFileSystemAccess } from '../../file-system-access';
 
 let _repository: IndexedDBFileSessionRepository | undefined;
 const getRepository = () => {
@@ -27,35 +22,25 @@ export const useFileSession = () => {
         });
     }, []);
 
-    const saveSession = useCallback(async (handles: FileSystemFileHandle[]) => {
-        if (!fileSessionRepository) return;
-        let videoHandle: FileSystemFileHandle | undefined;
-        const subtitleHandles: FileSystemFileHandle[] = [];
-        const unknownHandles: FileSystemFileHandle[] = [];
-        for (const h of handles) {
-            if (isMediaExtension(h.name)) {
-                videoHandle = h;
-            } else if (isSubtitleExtension(h.name)) {
-                subtitleHandles.push(h);
-            } else {
-                unknownHandles.push(h);
+    const saveSession = useCallback(
+        async ({
+            videoHandle,
+            subtitleHandles,
+        }: {
+            videoHandle?: FileSystemFileHandle;
+            subtitleHandles: FileSystemFileHandle[];
+        }) => {
+            if (!fileSessionRepository) return;
+
+            if (!videoHandle && subtitleHandles.length === 0) {
+                return;
             }
-        }
 
-        if (unknownHandles.length > 0) {
-            console.warn(
-                'Ignoring unsupported handles for file session restore',
-                unknownHandles.map((h) => h.name)
-            );
-        }
-
-        if (!videoHandle && subtitleHandles.length === 0) {
-            return;
-        }
-
-        await fileSessionRepository.merge({ videoHandle, subtitleHandles });
-        setCanRestoreLastSession(true);
-    }, []);
+            await fileSessionRepository.merge({ videoHandle, subtitleHandles });
+            setCanRestoreLastSession(true);
+        },
+        []
+    );
 
     const fetchSession = useCallback(() => fileSessionRepository?.fetch(), []);
 

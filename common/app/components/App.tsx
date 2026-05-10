@@ -66,7 +66,6 @@ import {
     showFilePicker,
     requestPermissions,
     resolveFiles,
-    inputAcceptFileExtensions,
 } from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
@@ -102,6 +101,31 @@ const useContentStyles = makeStyles<Theme, ContentProps>((theme) => ({
     }),
 }));
 
+const videoExtensions = ['.mkv', '.mp4', '.m4v', '.avi', '.webm'] as const;
+const audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'] as const;
+const subtitleExtensions = [
+    '.srt',
+    '.ass',
+    '.vtt',
+    '.sup',
+    '.nfvtt',
+    '.ytxml',
+    '.ytsrv3',
+    '.dfxp',
+    '.ttml2',
+    '.bbjson',
+] as const;
+const inputAcceptFileExtensions = [...subtitleExtensions, ...audioExtensions, ...videoExtensions].join(',');
+
+const VIDEO_EXT_SET = new Set<string>(videoExtensions);
+const AUDIO_EXT_SET = new Set<string>(audioExtensions);
+const SUBTITLE_EXT_SET = new Set<string>(subtitleExtensions);
+
+const getExtension = (fileName: string) => {
+    const index = fileName.lastIndexOf('.');
+    return index === -1 ? '' : fileName.substring(index).toLowerCase();
+};
+
 function extractSources(files: FileList | File[]): MediaSources {
     let subtitleFiles: File[] = [];
     let audioFile: File | undefined = undefined;
@@ -109,51 +133,26 @@ function extractSources(files: FileList | File[]): MediaSources {
 
     for (let i = 0; i < files.length; ++i) {
         const f = files[i];
-        const extensionStartIndex = f.name.lastIndexOf('.');
+        const extension = getExtension(f.name);
 
-        if (extensionStartIndex === -1) {
+        if (extension === '') {
             throw new LocalizedError('error.unknownExtension', { fileName: f.name });
         }
 
-        const extension = f.name.substring(extensionStartIndex + 1, f.name.length).toLowerCase();
-        switch (extension) {
-            case 'ass':
-            case 'srt':
-            case 'vtt':
-            case 'nfvtt':
-            case 'sup':
-            case 'ytxml':
-            case 'ytsrv3':
-            case 'dfxp':
-            case 'ttml2':
-            case 'bbjson':
-                subtitleFiles.push(f);
-                break;
-            case 'mkv':
-            case 'mp4':
-            case 'm4v':
-            case 'avi':
-            case 'webm':
-                if (videoFile) {
-                    throw new LocalizedError('error.onlyOneVideoFile');
-                }
-                videoFile = f;
-                break;
-            case 'mp3':
-            case 'm4a':
-            case 'aac':
-            case 'flac':
-            case 'ogg':
-            case 'wav':
-            case 'opus':
-            case 'm4b':
-                if (videoFile) {
-                    throw new LocalizedError('error.onlyOneAudioFile');
-                }
-                videoFile = f;
-                break;
-            default:
-                throw new LocalizedError('error.unsupportedExtension', { extension });
+        if (SUBTITLE_EXT_SET.has(extension)) {
+            subtitleFiles.push(f);
+        } else if (VIDEO_EXT_SET.has(extension)) {
+            if (videoFile) {
+                throw new LocalizedError('error.onlyOneVideoFile');
+            }
+            videoFile = f;
+        } else if (AUDIO_EXT_SET.has(extension)) {
+            if (videoFile) {
+                throw new LocalizedError('error.onlyOneAudioFile');
+            }
+            videoFile = f;
+        } else {
+            throw new LocalizedError('error.unsupportedExtension', { extension: extension.startsWith('.') ? extension.substring(1) : extension });
         }
     }
 
@@ -1262,12 +1261,28 @@ function App({
     const handleFileSelector = useCallback(async () => {
         if (supportsFileSystemAccess()) {
             try {
-                const handles = await showFilePicker();
+                const handles = await showFilePicker({
+                    videoExtensions: [...videoExtensions],
+                    audioExtensions: [...audioExtensions],
+                    subtitleExtensions: [...subtitleExtensions],
+                });
                 if (!handles || handles.length === 0) return;
                 const { files } = await resolveFiles(handles);
                 if (files.length === 0) return;
                 if (handleFiles({ files })) {
-                    await saveFileSession(handles);
+                    let videoHandle: FileSystemFileHandle | undefined;
+                    const subtitleHandles: FileSystemFileHandle[] = [];
+
+                    for (const h of handles) {
+                        const extension = getExtension(h.name);
+                        if (VIDEO_EXT_SET.has(extension) || AUDIO_EXT_SET.has(extension)) {
+                            videoHandle = h;
+                        } else if (SUBTITLE_EXT_SET.has(extension)) {
+                            subtitleHandles.push(h);
+                        }
+                    }
+
+                    await saveFileSession({ videoHandle, subtitleHandles });
                 }
             } catch (e) {
                 console.error('Failed to pick files via File System Access API:', e);

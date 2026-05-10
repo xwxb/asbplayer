@@ -4,38 +4,6 @@
  * and utilities to re-acquire permissions and resolve handles back to File objects on revisit.
  */
 
-const videoExtensions = ['.mkv', '.mp4', '.m4v', '.avi', '.webm'] as const;
-const audioExtensions = ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wav', '.opus', '.m4b'] as const;
-const subtitleExtensions = [
-    '.srt',
-    '.ass',
-    '.vtt',
-    '.sup',
-    '.nfvtt',
-    '.ytxml',
-    '.ytsrv3',
-    '.dfxp',
-    '.ttml2',
-    '.bbjson',
-] as const;
-const mediaExtensions = new Set<string>([...videoExtensions, ...audioExtensions]);
-const subtitleExtensionSet = new Set<string>(subtitleExtensions);
-
-export const inputAcceptFileExtensions = [...subtitleExtensions, ...audioExtensions, ...videoExtensions].join(',');
-
-function extOf(name: string): string {
-    const i = name.lastIndexOf('.');
-    return i >= 0 ? name.substring(i).toLowerCase() : '';
-}
-
-export function isMediaExtension(name: string): boolean {
-    return mediaExtensions.has(extOf(name));
-}
-
-export function isSubtitleExtension(name: string): boolean {
-    return subtitleExtensionSet.has(extOf(name));
-}
-
 export function supportsFileSystemAccess(): boolean {
     return typeof window !== 'undefined' && 'showOpenFilePicker' in window;
 }
@@ -89,7 +57,11 @@ export async function resolveFiles(
     return { files, errors };
 }
 
-export async function showFilePicker(): Promise<FileSystemFileHandle[] | undefined> {
+export async function showFilePicker(extensions: {
+    videoExtensions: string[];
+    audioExtensions: string[];
+    subtitleExtensions: string[];
+}): Promise<FileSystemFileHandle[] | undefined> {
     if (!supportsFileSystemAccess()) {
         return undefined;
     }
@@ -101,9 +73,9 @@ export async function showFilePicker(): Promise<FileSystemFileHandle[] | undefin
                 {
                     description: 'Media and subtitle files',
                     accept: {
-                        'video/*': [...videoExtensions],
-                        'audio/*': [...audioExtensions],
-                        'text/*': [...subtitleExtensions],
+                        'video/*': extensions.videoExtensions,
+                        'audio/*': extensions.audioExtensions,
+                        'text/*': extensions.subtitleExtensions,
                     },
                 },
             ],
