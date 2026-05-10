@@ -6,10 +6,16 @@ import {
     supportsFileSystemAccess,
 } from '../../file-system-access';
 
+let _repository: IndexedDBFileSessionRepository | undefined;
+const getRepository = () => {
+    if (_repository === undefined && supportsFileSystemAccess()) {
+        _repository = new IndexedDBFileSessionRepository();
+    }
+    return _repository;
+};
+
 export const useFileSession = () => {
-    const [fileSessionRepository] = useState<IndexedDBFileSessionRepository | undefined>(() =>
-        supportsFileSystemAccess() ? new IndexedDBFileSessionRepository() : undefined
-    );
+    const fileSessionRepository = getRepository();
     const [canRestoreLastSession, setCanRestoreLastSession] = useState<boolean>(false);
 
     useEffect(() => {
@@ -19,47 +25,44 @@ export const useFileSession = () => {
                 setCanRestoreLastSession(true);
             }
         });
-    }, [fileSessionRepository]);
+    }, []);
 
-    const saveSession = useCallback(
-        async (handles: FileSystemFileHandle[]) => {
-            if (!fileSessionRepository) return;
-            let videoHandle: FileSystemFileHandle | undefined;
-            const subtitleHandles: FileSystemFileHandle[] = [];
-            const unknownHandles: FileSystemFileHandle[] = [];
-            for (const h of handles) {
-                if (isMediaExtension(h.name)) {
-                    videoHandle = h;
-                } else if (isSubtitleExtension(h.name)) {
-                    subtitleHandles.push(h);
-                } else {
-                    unknownHandles.push(h);
-                }
+    const saveSession = useCallback(async (handles: FileSystemFileHandle[]) => {
+        if (!fileSessionRepository) return;
+        let videoHandle: FileSystemFileHandle | undefined;
+        const subtitleHandles: FileSystemFileHandle[] = [];
+        const unknownHandles: FileSystemFileHandle[] = [];
+        for (const h of handles) {
+            if (isMediaExtension(h.name)) {
+                videoHandle = h;
+            } else if (isSubtitleExtension(h.name)) {
+                subtitleHandles.push(h);
+            } else {
+                unknownHandles.push(h);
             }
+        }
 
-            if (unknownHandles.length > 0) {
-                console.warn(
-                    'Ignoring unsupported handles for file session restore',
-                    unknownHandles.map((h) => h.name)
-                );
-            }
+        if (unknownHandles.length > 0) {
+            console.warn(
+                'Ignoring unsupported handles for file session restore',
+                unknownHandles.map((h) => h.name)
+            );
+        }
 
-            if (!videoHandle && subtitleHandles.length === 0) {
-                return;
-            }
+        if (!videoHandle && subtitleHandles.length === 0) {
+            return;
+        }
 
-            await fileSessionRepository.merge({ videoHandle, subtitleHandles });
-            setCanRestoreLastSession(true);
-        },
-        [fileSessionRepository]
-    );
+        await fileSessionRepository.merge({ videoHandle, subtitleHandles });
+        setCanRestoreLastSession(true);
+    }, []);
 
-    const fetchSession = useCallback(() => fileSessionRepository?.fetch(), [fileSessionRepository]);
+    const fetchSession = useCallback(() => fileSessionRepository?.fetch(), []);
 
     const clearSession = useCallback(async () => {
         await fileSessionRepository?.clear();
         setCanRestoreLastSession(false);
-    }, [fileSessionRepository]);
+    }, []);
 
     return {
         canRestoreLastSession,
