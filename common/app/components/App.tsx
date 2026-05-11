@@ -126,6 +126,36 @@ const getExtension = (fileName: string) => {
     return index === -1 ? '' : fileName.substring(index).toLowerCase();
 };
 
+async function extractDropFileHandles(items: DataTransferItemList): Promise<FileSystemFileHandle[] | undefined> {
+    const handles: FileSystemFileHandle[] = [];
+
+    for (let i = 0; i < items.length; ++i) {
+        const item = items[i];
+        if (item.kind !== 'file') {
+            continue;
+        }
+
+        // Chromium exposes getAsFileSystemHandle; other browsers should quietly fall back to file-only loading.
+        const getAsFileSystemHandle = (item as any).getAsFileSystemHandle as (() => Promise<any>) | undefined;
+        if (typeof getAsFileSystemHandle !== 'function') {
+            return undefined;
+        }
+
+        try {
+            const handle = await getAsFileSystemHandle.call(item);
+            if (handle?.kind === 'file') {
+                handles.push(handle as FileSystemFileHandle);
+            }
+        } catch (e) {
+            // Handle acquisition is best-effort; never block the normal drop flow if this fails.
+            console.warn('Failed to read dropped file handle:', e);
+            return undefined;
+        }
+    }
+
+    return handles.length > 0 ? handles : undefined;
+}
+
 function extractSources(files: FileList | File[]): MediaSources {
     let subtitleFiles: File[] = [];
     let audioFile: File | undefined = undefined;
@@ -951,6 +981,36 @@ function App({
         [handleError]
     );
 
+    const persistFileSessionHandles = useCallback(
+        (handles: FileSystemFileHandle[] | undefined) => {
+            if (!handles || handles.length === 0) {
+                return;
+            }
+
+            let videoHandle: FileSystemFileHandle | undefined;
+            const subtitleHandles: FileSystemFileHandle[] = [];
+            for (const handle of handles) {
+                const extension = getExtension(handle.name);
+                if (VIDEO_EXT_SET.has(extension) || AUDIO_EXT_SET.has(extension)) {
+                    videoHandle = handle;
+                } else if (SUBTITLE_EXT_SET.has(extension)) {
+                    subtitleHandles.push(handle);
+                }
+            }
+
+            if (!videoHandle && subtitleHandles.length === 0) {
+                return;
+            }
+
+            // Saving file handles should not break the active load flow; merge remains in repository.
+            void saveFileSession({ videoHandle, subtitleHandles }).catch((e) => {
+                console.error('Failed to save file session:', e);
+                handleError(e);
+            });
+        },
+        [handleError, saveFileSession]
+    );
+
     const handleRestoreLastSession = useCallback(async () => {
         try {
             const record = await fetchSession();
@@ -1229,6 +1289,7 @@ function App({
 
             setDragging(false);
             dragEnterRef.current = null;
+            const dataTransfer = e.dataTransfer;
 
             function allDirectories(items: DataTransferItemList) {
                 for (let i = 0; i < items.length; ++i) {
@@ -1240,13 +1301,25 @@ function App({
                 return true;
             }
 
-            if (e.dataTransfer.items && e.dataTransfer.items.length > 0 && allDirectories(e.dataTransfer.items)) {
-                handleDirectory(e.dataTransfer.items);
-            } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                handleFiles({ files: e.dataTransfer.files });
+            if (dataTransfer.items && dataTransfer.items.length > 0 && allDirectories(dataTransfer.items)) {
+                handleDirectory(dataTransfer.items);
+            } else if (dataTransfer.files && dataTransfer.files.length > 0) {
+                // Snapshot file objects before any async work; drag DataTransfer can be cleared after event unwinds.
+                const droppedFiles = Array.from(dataTransfer.files);
+                if (!handleFiles({ files: droppedFiles })) {
+                    return;
+                }
+
+                if (dataTransfer.items && dataTransfer.items.length > 0) {
+                    void extractDropFileHandles(dataTransfer.items).then((fileHandles) =>
+                        persistFileSessionHandles(fileHandles)
+                    ).catch((e) => {
+                        console.warn('Failed to collect dropped file handles:', e);
+                    });
+                }
             }
         },
-        [inVideoPlayer, handleError, handleFiles, handleDirectory, ankiDialogOpen, t]
+        [inVideoPlayer, handleError, handleFiles, handleDirectory, ankiDialogOpen, t, persistFileSessionHandles]
     );
 
     const handleFileInputChange = useCallback(() => {
@@ -1270,19 +1343,7 @@ function App({
                 const { files } = await resolveFiles(handles);
                 if (files.length === 0) return;
                 if (handleFiles({ files })) {
-                    let videoHandle: FileSystemFileHandle | undefined;
-                    const subtitleHandles: FileSystemFileHandle[] = [];
-
-                    for (const h of handles) {
-                        const extension = getExtension(h.name);
-                        if (VIDEO_EXT_SET.has(extension) || AUDIO_EXT_SET.has(extension)) {
-                            videoHandle = h;
-                        } else if (SUBTITLE_EXT_SET.has(extension)) {
-                            subtitleHandles.push(h);
-                        }
-                    }
-
-                    await saveFileSession({ videoHandle, subtitleHandles });
+                    persistFileSessionHandles(handles);
                 }
             } catch (e) {
                 console.error('Failed to pick files via File System Access API:', e);
@@ -1291,7 +1352,7 @@ function App({
         } else {
             fileInputRef.current?.click();
         }
-    }, [handleFiles, handleError, saveFileSession]);
+    }, [handleFiles, handleError, persistFileSessionHandles]);
 
     const handleVideoElementSelected = useCallback(
         async (videoElement: VideoTabModel) => {
