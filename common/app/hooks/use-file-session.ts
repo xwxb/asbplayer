@@ -20,7 +20,7 @@ export const useFileSession = () => {
                 setCanRestoreLastSession(true);
             }
         });
-    }, []);
+    }, [fileSessionRepository]);
 
     const saveSession = useCallback(
         async ({
@@ -39,15 +39,15 @@ export const useFileSession = () => {
             await fileSessionRepository.merge({ videoHandle, subtitleHandles });
             setCanRestoreLastSession(true);
         },
-        []
+        [fileSessionRepository]
     );
 
-    const fetchSession = useCallback(() => fileSessionRepository?.fetch(), []);
+    const fetchSession = useCallback(() => fileSessionRepository?.fetch(), [fileSessionRepository]);
 
     const clearSession = useCallback(async () => {
         await fileSessionRepository?.clear();
         setCanRestoreLastSession(false);
-    }, []);
+    }, [fileSessionRepository]);
 
     return {
         canRestoreLastSession,

@@ -61,12 +61,7 @@ import { useAppWebSocketClient } from '../hooks/use-app-web-socket-client';
 import { LoadSubtitlesCommand } from '../../web-socket-client';
 import { ExtensionBridgedCopyHistoryRepository } from '../services/extension-bridged-copy-history-repository';
 import { IndexedDBCopyHistoryRepository } from '../../copy-history';
-import {
-    supportsFileSystemAccess,
-    showFilePicker,
-    requestPermissions,
-    resolveFiles,
-} from '../../file-system-access';
+import { supportsFileSystemAccess, showFilePicker, requestPermissions, resolveFiles } from '../../file-system-access';
 import { isMobile } from 'react-device-detect';
 import { GlobalState } from '../../global-state';
 import mp3WorkerFactory from '../../audio-clip/mp3-encoder-worker.ts?worker';
@@ -182,7 +177,9 @@ function extractSources(files: FileList | File[]): MediaSources {
             }
             videoFile = f;
         } else {
-            throw new LocalizedError('error.unsupportedExtension', { extension: extension.startsWith('.') ? extension.substring(1) : extension });
+            throw new LocalizedError('error.unsupportedExtension', {
+                extension: extension.startsWith('.') ? extension.substring(1) : extension,
+            });
         }
     }
 
@@ -1311,11 +1308,11 @@ function App({
                 }
 
                 if (dataTransfer.items && dataTransfer.items.length > 0) {
-                    void extractDropFileHandles(dataTransfer.items).then((fileHandles) =>
-                        persistFileSessionHandles(fileHandles)
-                    ).catch((e) => {
-                        console.warn('Failed to collect dropped file handles:', e);
-                    });
+                    void extractDropFileHandles(dataTransfer.items)
+                        .then((fileHandles) => persistFileSessionHandles(fileHandles))
+                        .catch((e) => {
+                            console.warn('Failed to collect dropped file handles:', e);
+                        });
                 }
             }
         },
