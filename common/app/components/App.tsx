@@ -130,7 +130,7 @@ async function extractDropFileHandles(items: DataTransferItemList): Promise<File
             continue;
         }
 
-        // Chromium exposes getAsFileSystemHandle; other browsers should quietly fall back to file-only loading.
+        // Persist dropped handles only when the browser exposes getAsFileSystemHandle.
         const getAsFileSystemHandle = (item as any).getAsFileSystemHandle as (() => Promise<any>) | undefined;
         if (typeof getAsFileSystemHandle !== 'function') {
             return undefined;
@@ -142,7 +142,7 @@ async function extractDropFileHandles(items: DataTransferItemList): Promise<File
                 handles.push(handle as FileSystemFileHandle);
             }
         } catch (e) {
-            // Handle acquisition is best-effort; never block the normal drop flow if this fails.
+            // Best-effort only; if handle access fails, keep loading dropped files normally.
             console.warn('Failed to read dropped file handle:', e);
             return undefined;
         }
@@ -999,7 +999,7 @@ function App({
                 return;
             }
 
-            // Saving file handles should not break the active load flow; merge remains in repository.
+            // Persist in background so session saving never blocks current file loading.
             void saveFileSession({ videoHandle, subtitleHandles }).catch((e) => {
                 console.error('Failed to save file session:', e);
                 handleError(e);
@@ -1301,7 +1301,7 @@ function App({
             if (dataTransfer.items && dataTransfer.items.length > 0 && allDirectories(dataTransfer.items)) {
                 handleDirectory(dataTransfer.items);
             } else if (dataTransfer.files && dataTransfer.files.length > 0) {
-                // Snapshot file objects before any async work; drag DataTransfer can be cleared after event unwinds.
+                // Copy files synchronously; DataTransfer may be cleared after this handler returns.
                 const droppedFiles = Array.from(dataTransfer.files);
                 if (!handleFiles({ files: droppedFiles })) {
                     return;
