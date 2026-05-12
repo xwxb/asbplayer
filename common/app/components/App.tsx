@@ -122,7 +122,7 @@ const getExtension = (fileName: string) => {
 };
 
 async function extractDropFileHandles(items: DataTransferItemList): Promise<FileSystemFileHandle[] | undefined> {
-    const handles: FileSystemFileHandle[] = [];
+    const handlePromises: Promise<any>[] = [];
 
     for (let i = 0; i < items.length; ++i) {
         const item = items[i];
@@ -136,8 +136,14 @@ async function extractDropFileHandles(items: DataTransferItemList): Promise<File
             return undefined;
         }
 
+        // Capture handle promises synchronously before DataTransfer gets cleared.
+        handlePromises.push(getAsFileSystemHandle.call(item));
+    }
+
+    const handles: FileSystemFileHandle[] = [];
+    for (const handlePromise of handlePromises) {
         try {
-            const handle = await getAsFileSystemHandle.call(item);
+            const handle = await handlePromise;
             if (handle?.kind === 'file') {
                 handles.push(handle as FileSystemFileHandle);
             }
