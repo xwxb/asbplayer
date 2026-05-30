@@ -710,8 +710,14 @@
         "jimakuApiKey": "JimakuのAPIキー",
         "jimakuApiKeyAutosaveHint": "自動的に保存されます。APIキーは<0>こちらから</0>入手できます。",
         "entries": "検索結果",
+        "recentEntries": "Recent works",
+        "cachedFileCount_one": "{{count}} cached file",
+        "cachedFileCount_other": "{{count}} cached files",
         "noEntries": "検索結果はありません",
         "availableFiles": "ファイル",
-        "noFiles": "ファイルはありません"
+        "noFiles": "ファイルはありません",
+        "searchCategory": "Search category",
+        "categoryAnime": "Anime",
+        "categoryDrama": "Drama"
     }
 }

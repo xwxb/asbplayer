@@ -442,7 +442,13 @@ export default function VideoDataSyncUi({ bridge }: Props) {
                     jimakuApiKey={onlineSubtitleSourceConfig.jimakuApiKey}
                     onJimakuApiKeyChange={(jimakuApiKey) => handleOnlineSubtitleSourceConfigChanged({ jimakuApiKey })}
                     jimakuSearchCategory={onlineSubtitleSourceConfig.jimakuSearchCategory}
-                    onJimakuSearchCategoryChange={(jimakuSearchCategory) => handleOnlineSubtitleSourceConfigChanged({ jimakuSearchCategory })}
+                    onJimakuSearchCategoryChange={(jimakuSearchCategory) =>
+                        handleOnlineSubtitleSourceConfigChanged({ jimakuSearchCategory })
+                    }
+                    jimakuRecentWorks={onlineSubtitleSourceConfig.jimakuRecentWorks ?? []}
+                    onJimakuRecentWorksChange={(jimakuRecentWorks) =>
+                        handleOnlineSubtitleSourceConfigChanged({ jimakuRecentWorks })
+                    }
                 />
                 <input
                     ref={fileInputRef}

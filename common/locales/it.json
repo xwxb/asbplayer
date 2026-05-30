@@ -710,8 +710,14 @@
         "jimakuApiKey": "Chiave API Jimaku",
         "jimakuApiKeyAutosaveHint": "Salvata automaticamente. Ottieni una chiave API <0>qui</0>.",
         "entries": "Risultati della ricerca",
+        "recentEntries": "Recent works",
+        "cachedFileCount_one": "{{count}} cached file",
+        "cachedFileCount_other": "{{count}} cached files",
         "noEntries": "Nessun risultato",
         "availableFiles": "File",
-        "noFiles": "Nessun file"
+        "noFiles": "Nessun file",
+        "searchCategory": "Search category",
+        "categoryAnime": "Anime",
+        "categoryDrama": "Drama"
     }
 }
